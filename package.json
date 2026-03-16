@@ -1,0 +1,31 @@
+{
+  "name": "angry-aliens",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "build:preview": "npm run build && npm run preview",
+    "lint": "eslint src --ext .ts,.tsx --report-unused-disable-directives --max-warnings 0",
+    "lint:fix": "eslint src --ext .ts,.tsx --fix",
+    "format": "prettier --write \"src/**/*.{ts,tsx,json,css,md}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,json,css,md}\""
+  },
+  "dependencies": {
+    "matter-js": "^0.20.0",
+    "phaser": "^3.90.0"
+  },
+  "devDependencies": {
+    "@types/matter-js": "^0.19.7",
+    "@typescript-eslint/eslint-plugin": "^8.56.1",
+    "@typescript-eslint/parser": "^8.56.1",
+    "eslint": "^10.0.2",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.5",
+    "prettier": "^3.8.1",
+    "typescript": "~5.7.2",
+    "typescript-eslint": "^8.56.1",
+    "vite": "^6.3.1"
+  }
+}
