@@ -102,6 +102,21 @@ npm install
 
 ---
 
+### Architecture Decisions
+
+- **DI Container** - Makes testing and refactoring much easier; systems are loosely coupled
+- **EventBus** - Decouples UI from game logic; scenes don't need direct references to each other
+- **State Machines** - Perfect for entities with clear lifecycle states (birds, pigs, slingshot)
+- **Factory Pattern** - Centralized creation logic makes it easy to add new entity types
+
+### Web Workers
+
+- **Offload heavy computation** - Voronoi fragmentation runs in a worker thread
+- **Template caching** - Cache generated fragment shapes to avoid regenerating identical patterns
+- **Message passing** - Keep worker communication minimal to avoid overhead
+
+---
+
 ### Directory Structure
 
 ```
@@ -314,21 +329,6 @@ DAMAGE_MULTIPLIERS: {
 2. **Configure colors** in `src/config/ThemeConfig.ts`
 3. **Add background sprites** to `game-assets/atlases/background.png`
 4. **Add music** to audio sprite in `game-assets/audio/sprites/`
-
----
-
-### Architecture Decisions
-
-- **DI Container** - Makes testing and refactoring much easier; systems are loosely coupled
-- **EventBus** - Decouples UI from game logic; scenes don't need direct references to each other
-- **State Machines** - Perfect for entities with clear lifecycle states (birds, pigs, slingshot)
-- **Factory Pattern** - Centralized creation logic makes it easy to add new entity types
-
-### Web Workers
-
-- **Offload heavy computation** - Voronoi fragmentation runs in a worker thread
-- **Template caching** - Cache generated fragment shapes to avoid regenerating identical patterns
-- **Message passing** - Keep worker communication minimal to avoid overhead
 
 ---
 
