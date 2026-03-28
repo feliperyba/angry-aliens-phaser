@@ -1,5 +1,11 @@
 import { BlockMaterial } from "../../constants/Materials";
 import { GameConfig } from "../GameConfig";
+import { MobileManager } from "../../systems/mobile/MobileManager";
+import { PerformanceManager } from "../../systems/PerformanceManager";
+
+const _pmode = PerformanceManager.getPerformanceMode();
+const _fpsEst = _pmode === "high" ? 1.0 : _pmode === "medium" ? 0.6 : _pmode === "low" ? 0.25 : 0.5;
+const _mobileBlendStr = MobileManager.getInstance().isMobile() && _fpsEst < 0.7 ? "NORMAL" : "ADD";
 
 export const VFX_ATLAS_KEY = "vfx" as const;
 
@@ -127,7 +133,7 @@ function createDefaultMaterialRegistry(): MaterialConfigRegistry {
       particleScale: { start: 0.25, end: 0 },
       particleAlpha: { start: 0.7, end: 0 },
       particleTint: [0x88ccff, 0xaaddff, 0xffffff, 0xccffff],
-      particleBlendMode: "ADD",
+      particleBlendMode: _mobileBlendStr,
       spreadCone: 0.4,
       downwardBias: 0.5,
       stages: { primary: 0, secondary: 50, settling: 150 },
@@ -263,7 +269,7 @@ function createDefaultMaterialRegistry(): MaterialConfigRegistry {
       particleScale: { start: 0.2, end: 0 },
       particleAlpha: { start: 0.9, end: 0 },
       particleTint: [0xffffcc, 0xffff99, 0xffffff, 0xffcc66],
-      particleBlendMode: "ADD",
+      particleBlendMode: _mobileBlendStr,
       spreadCone: 0.3,
       downwardBias: 0.4,
       stages: { primary: 0, secondary: 50, settling: 100 },
@@ -307,7 +313,7 @@ function createDefaultMaterialRegistry(): MaterialConfigRegistry {
       particleScale: { start: 0.4, end: 0 },
       particleAlpha: { start: 0.9, end: 0 },
       particleTint: [0xff6600, 0xff9900, 0xffcc00, 0xff3300],
-      particleBlendMode: "ADD",
+      particleBlendMode: _mobileBlendStr,
       spreadCone: Math.PI,
       downwardBias: 0.0,
       stages: { primary: 0, secondary: 100, settling: 300 },

@@ -36,7 +36,13 @@ export class ComboTracker {
 
     this.events.push({ x, y, points, time: now });
 
-    this.events = this.events.filter((e) => now - e.time < this.config.windowMs);
+    let writeIdx = 0;
+    for (let i = 0; i < this.events.length; i++) {
+      if (now - this.events[i].time < this.config.windowMs) {
+        this.events[writeIdx++] = this.events[i];
+      }
+    }
+    this.events.length = writeIdx;
 
     this.currentComboCount = this.events.length;
 

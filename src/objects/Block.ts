@@ -219,8 +219,9 @@ export class Block extends PhysicsEntity {
     const bodyA = event.bodyA;
     const bodyB = event.bodyB;
 
-    const speedSquared =
-      (bodyA.velocity.x - bodyB.velocity.x) ** 2 + (bodyA.velocity.y - bodyB.velocity.y) ** 2;
+    const dvx = bodyA.velocity.x - bodyB.velocity.x;
+    const dvy = bodyA.velocity.y - bodyB.velocity.y;
+    const speedSquared = dvx * dvx + dvy * dvy;
 
     if (speedSquared < MIN_IMPACT_THRESHOLD_SQ) return;
 
@@ -233,15 +234,10 @@ export class Block extends PhysicsEntity {
         ? bodyB
         : null;
 
-    const relativeVelocity = {
-      x: bodyA.velocity.x - bodyB.velocity.x,
-      y: bodyA.velocity.y - bodyB.velocity.y,
-    };
-
     const rawImpactSpeed = Math.sqrt(speedSquared);
     const impactSpeed = TimeScaleCompensator.compensateImpactSpeed(rawImpactSpeed, this.scene);
 
-    let impactAngle = Math.atan2(relativeVelocity.y, relativeVelocity.x);
+    let impactAngle = Math.atan2(dvy, dvx);
 
     const collisionData = event.collision;
     if (collisionData && collisionData.normal) {
@@ -252,9 +248,7 @@ export class Block extends PhysicsEntity {
     const impactX = impactPoint?.x;
     const impactY = impactPoint?.y;
 
-    // Stone weakpoint bonus
     let weakpointMultiplier = 1.0;
-    //if (this.material === BlockMaterial.STONE) {
     const normalizedAngle = Math.abs(impactAngle) % (Math.PI / 2);
     const isNearCorner =
       normalizedAngle < BLOCK_WEAKPOINT_CONFIG.cornerAngleMin ||
@@ -262,7 +256,6 @@ export class Block extends PhysicsEntity {
     if (isNearCorner) {
       weakpointMultiplier = BLOCK_WEAKPOINT_CONFIG.damageMultiplier;
     }
-    //}
 
     if (impactSpeed >= this.minImpactSpeed) {
       this.lastImpactSpeed = impactSpeed;
@@ -275,7 +268,9 @@ export class Block extends PhysicsEntity {
 
         damage = 1; // Fragments always deal 1 damage on collision, regardless of speed
       } else if (birdBody && birdBody.label) {
-        const birdTypeStr = birdBody.label.replace("bird-", "") as BirdType;
+        const birdTypeStr = birdBody.label.startsWith("bird-")
+          ? (birdBody.label.slice(5) as BirdType)
+          : (birdBody.label as BirdType);
         const baseDamage = Math.floor(impactSpeed * BLOCK_DAMAGE_CONFIG.birdImpactMultiplier);
 
         if (

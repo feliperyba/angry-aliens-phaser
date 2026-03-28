@@ -15,7 +15,9 @@ bootstrapServices();
 
 const container = getServiceContainer();
 const mobileSettings = container.resolve<IMobileSettingsProvider>(ServiceTokens.MOBILE_SETTINGS);
-MobileManager.getInstance().setSettingsProvider(mobileSettings);
+const mobileManager = MobileManager.getInstance();
+mobileManager.setSettingsProvider(mobileSettings);
+const isMobile = mobileManager.isMobile();
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -32,8 +34,8 @@ const config: Phaser.Types.Core.GameConfig = {
   },
   render: {
     antialias: true,
-    antialiasGL: true,
-    powerPreference: "high-performance",
+    antialiasGL: !isMobile,
+    powerPreference: isMobile ? "default" : "high-performance",
     roundPixels: true,
   },
   physics: {
@@ -66,7 +68,6 @@ const config: Phaser.Types.Core.GameConfig = {
 };
 
 const game = new Phaser.Game(config);
-const mobileManager = MobileManager.getInstance();
 
 if (mobileManager.isMobile()) {
   const requestFullscreenOnce = () => {

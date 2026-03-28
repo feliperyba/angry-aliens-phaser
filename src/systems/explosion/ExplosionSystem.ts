@@ -6,9 +6,7 @@ import {
   CHAIN_REACTION_MULTIPLIER,
   EXPLOSION_SYSTEM_CONFIG,
 } from "../../config/PhysicsConfig";
-import { applyRadialImpulse } from "../../utils/PhysicsUtils";
 import type { Position } from "../../types/Vector2";
-import { BodyCache } from "../../utils/BodyCache";
 
 type BlockEntity = {
   isDestroyed(): boolean;
@@ -124,30 +122,41 @@ export class ExplosionSystem implements IExplosionSystem {
       this.deps.scorePopupManager.show(x, y, EXPLOSION_SYSTEM_CONFIG.explosionBonusScore);
     }
 
-    this.deps.wakeManager.wakeInRadiusImmediate(x, y, radius);
-
-    this.applyExplosionToWorld(
+    // Pass 1: Unified entity pass - impulse + damage for blocks & pigs in single iteration
+    // No separate wakeInRadiusImmediate needed - impulse inline wakes sleeping bodies
+    this.applyExplosionToEntities(
       x,
       y,
       radius,
+      damage,
       pushSpeed,
       options?.excludeBody as Matter.Body | undefined
     );
+
+    // Pass 2: Fragment impulse via FragmentManager (uses shared applyRadialImpulse)
     this.deps.vfxManager.applyExplosionToFragments(x, y, radius, pushSpeed);
-    this.applyExplosionToBlocks(x, y, radius, damage, pushSpeed);
-    this.applyExplosionToPigs(x, y, radius, damage);
   }
 
-  private applyExplosionToBlocks(
+  /**
+   * Unified explosion pass: computes distance once per entity, applies impulse
+   * and damage in the same iteration. Eliminates 3 redundant passes:
+   *  - No separate wakeInRadiusImmediate (impulse inline wakes sleeping bodies)
+   *  - No separate applyExplosionToWorld (impulse applied per-entity here)
+   *  - No separate block/pig damage loops (damage applied alongside impulse)
+   */
+  private applyExplosionToEntities(
     explosionX: number,
     explosionY: number,
     radius: number,
     maxDamage: number,
-    pushSpeed: number
+    pushSpeed: number,
+    excludeBody?: Matter.Body
   ): void {
-    // Pre-compute squared radius for faster distance check
     const radiusSquared = radius * radius;
+    const massFactorConstant = 0.02;
+    const pigDamageMax = maxDamage * EXPLOSION_SYSTEM_CONFIG.pigDamageMultiplier;
 
+    // --- Blocks: impulse + damage, single distance computation ---
     for (const block of this.blocks) {
       if (block.isDestroyed()) continue;
 
@@ -155,17 +164,21 @@ export class ExplosionSystem implements IExplosionSystem {
       if (!matterBlock?.body) continue;
 
       const body = matterBlock.body as Matter.Body;
+      if (body === excludeBody || body.isStatic) continue;
+
       const dx = body.position.x - explosionX;
       const dy = body.position.y - explosionY;
       const distSquared = dx * dx + dy * dy;
 
-      // Early exit using squared distance - no sqrt needed for rejection
       if (distSquared > radiusSquared) continue;
 
-      // Only compute sqrt when we know the block is in range
       const distance = Math.sqrt(distSquared);
       const distanceRatio = this.getDistanceRatio(distance, radius);
 
+      // Apply impulse inline (reuses distance, includes wake)
+      this.applyImpulseToBody(body, dx, dy, distance, distanceRatio, pushSpeed, massFactorConstant);
+
+      // Apply damage using the same distance computation
       if (block.isExplosive()) {
         const chainDelay = Math.floor(
           EXPLOSION_SYSTEM_CONFIG.chainDelayMinMs +
@@ -184,25 +197,15 @@ export class ExplosionSystem implements IExplosionSystem {
         });
       } else {
         const damage = this.calculateBlastDamage(distanceRatio, maxDamage);
-        if (damage <= 0) {
-          continue;
+        if (damage > 0) {
+          const impactAngle = Math.atan2(dy, dx);
+          const effectivePushSpeed = pushSpeed * (1 - distanceRatio);
+          block.takeDamage(damage, effectivePushSpeed, impactAngle);
         }
-
-        const impactAngle = Math.atan2(dy, dx);
-        const effectivePushSpeed = pushSpeed * (1 - distanceRatio);
-        block.takeDamage(damage, effectivePushSpeed, impactAngle);
       }
     }
-  }
 
-  private applyExplosionToPigs(
-    explosionX: number,
-    explosionY: number,
-    radius: number,
-    maxDamage: number
-  ): void {
-    const radiusSquared = radius * radius;
-
+    // --- Pigs: impulse + damage, single distance computation ---
     for (const pig of this.pigs) {
       if (pig.isDestroyed()) continue;
 
@@ -210,25 +213,64 @@ export class ExplosionSystem implements IExplosionSystem {
       if (!matterPig?.body) continue;
 
       const body = matterPig.body as Matter.Body;
+      if (body === excludeBody || body.isStatic) continue;
+
       const dx = body.position.x - explosionX;
       const dy = body.position.y - explosionY;
       const distSquared = dx * dx + dy * dy;
 
-      // Early exit using squared distance - no sqrt needed for rejection
       if (distSquared > radiusSquared) continue;
 
       const distance = Math.sqrt(distSquared);
       const distanceRatio = this.getDistanceRatio(distance, radius);
-      const damage = this.calculateBlastDamage(
-        distanceRatio,
-        maxDamage * EXPLOSION_SYSTEM_CONFIG.pigDamageMultiplier
-      );
-      if (damage <= 0) {
-        continue;
-      }
 
-      pig.takeDamage(damage);
+      // Apply impulse inline (reuses distance, includes wake)
+      this.applyImpulseToBody(body, dx, dy, distance, distanceRatio, pushSpeed, massFactorConstant);
+
+      // Apply damage using the same distance computation
+      const damage = this.calculateBlastDamage(distanceRatio, pigDamageMax);
+      if (damage > 0) {
+        pig.takeDamage(damage);
+      }
     }
+  }
+
+  /**
+   * Apply radial impulse to a body using pre-computed distance values.
+   * Avoids redundant sqrt when distance is already known from the damage calculation.
+   */
+  private applyImpulseToBody(
+    body: Matter.Body,
+    dx: number,
+    dy: number,
+    distance: number,
+    distanceRatio: number,
+    pushSpeed: number,
+    massFactorConstant: number
+  ): void {
+    if (body.isSleeping) {
+      Matter.Sleeping.set(body, false);
+    }
+
+    let impulseSpeed = pushSpeed * (1 - distanceRatio);
+    const massFactor = 1 / (1 + body.mass * massFactorConstant);
+    impulseSpeed *= massFactor;
+
+    let dirX: number;
+    let dirY: number;
+    if (distance <= 0) {
+      const randomAngle = Math.random() * Math.PI * 2;
+      dirX = Math.cos(randomAngle);
+      dirY = Math.sin(randomAngle);
+    } else {
+      dirX = dx / distance;
+      dirY = dy / distance;
+    }
+
+    Matter.Body.setVelocity(body, {
+      x: body.velocity.x + dirX * impulseSpeed,
+      y: body.velocity.y + dirY * impulseSpeed,
+    });
   }
 
   private getDistanceRatio(distance: number, radius: number): number {
@@ -241,28 +283,6 @@ export class ExplosionSystem implements IExplosionSystem {
 
   private calculateBlastDamage(distanceRatio: number, maxDamage: number): number {
     return Math.floor((1 - distanceRatio) * maxDamage);
-  }
-
-  private applyExplosionToWorld(
-    explosionX: number,
-    explosionY: number,
-    radius: number,
-    pushSpeed: number,
-    excludeBody?: Matter.Body
-  ): void {
-    const engine = this.deps.scene.matter.world.engine as Matter.Engine;
-
-    const bounds = {
-      min: { x: explosionX - radius, y: explosionY - radius },
-      max: { x: explosionX + radius, y: explosionY + radius },
-    };
-
-    const bodiesInRegion = BodyCache.getInstance().getBodiesInRegion(engine, bounds);
-
-    for (const body of bodiesInRegion) {
-      if (body === excludeBody) continue;
-      applyRadialImpulse(body, explosionX, explosionY, radius, pushSpeed);
-    }
   }
 
   public destroy(): void {

@@ -4,6 +4,7 @@ import { BlockMaterial } from "../constants/Materials";
 import { CollisionCategory } from "../constants";
 import { BodyLabels } from "../constants/BodyLabels";
 import type { IFragmentManager, IFragmentCollidable } from "../interfaces/IFragmentManager";
+import { applyRadialImpulse } from "../utils/PhysicsUtils";
 import {
   FRAGMENT_CONFIG,
   FRAGMENT_BODY_CONFIG,
@@ -25,6 +26,8 @@ interface FragmentEntry {
   poolSlotIndex?: number;
   material: BlockMaterial;
   area: number;
+  vertexString: string;
+  vertices: { x: number; y: number }[];
 }
 
 interface PooledFragment {
@@ -39,6 +42,7 @@ interface QueuedFragment {
   atlasKey: string;
   frameName: string;
   vertexString: string;
+  vertices: { x: number; y: number }[];
   originX: number;
   originY: number;
   rotation: number;
@@ -54,26 +58,29 @@ interface QueuedFragment {
 }
 
 export type FragmentCollisionSoundCallback = (material: BlockMaterial, impactSpeed: number) => void;
-
 export type FragmentCollisionHapticCallback = (
   material: BlockMaterial,
   impactSpeed: number,
   areaRatio: number
 ) => void;
 
+const IMMEDIATE_TIME_BUDGET_MS = 4;
+
 export class FragmentManager implements IFragmentManager {
-  private readonly minFragmentSpeedSquared = FRAGMENT_MANAGER_CONFIG.minFragmentSpeed ** 2;
-  private readonly collisionRadiusSquared = FRAGMENT_MANAGER_CONFIG.collisionRadius ** 2;
-  private readonly hapticCooldownMs = DesignTokens.mobile.hapticCooldowns.fragment;
+  private readonly minFragmentSpeedSquared: number =
+    FRAGMENT_MANAGER_CONFIG.minFragmentSpeed * FRAGMENT_MANAGER_CONFIG.minFragmentSpeed;
+  private readonly collisionRadiusSquared: number =
+    FRAGMENT_MANAGER_CONFIG.collisionRadius * FRAGMENT_MANAGER_CONFIG.collisionRadius;
+  private readonly hapticCooldownMs: number = DesignTokens.mobile.hapticCooldowns.fragment;
 
   private scene: Phaser.Scene;
   private atlasCache: FragmentAtlasCache;
   private activeFragments: FragmentEntry[] = [];
   private fragmentPool: PooledFragment[] = [];
-  private poolByVertexString: Map<string, number[]> = new Map();
-  private availablePoolSlots: number[] = [];
+  private fragmentQueueHead: number = 0;
   private fragmentQueue: QueuedFragment[] = [];
-  private cleanupTimer: Phaser.Time.TimerEvent | null = null;
+  private poolByVertexString: Map<string, number[]> = new Map();
+  private cleanupTimer!: Phaser.Time.TimerEvent | null;
   private destroyed: boolean = false;
   private frameCreatedCount: number = 0;
   private isLowEndDevice: boolean;
@@ -127,7 +134,7 @@ export class FragmentManager implements IFragmentManager {
           wakePositions.push({ x: pos.x, y: pos.y });
         }
 
-        this.releaseFragment(entry.body, entry.poolSlotIndex);
+        this.releaseFragment(entry.body, entry.poolSlotIndex, entry.vertexString);
         this.activeFragments.splice(i, 1);
       }
     }
@@ -189,6 +196,7 @@ export class FragmentManager implements IFragmentManager {
       height,
       material
     );
+
     if (!atlas) {
       return [];
     }
@@ -217,9 +225,16 @@ export class FragmentManager implements IFragmentManager {
       }
 
       const vertexString = isHighQuality ? fragment.vertexStringHigh : fragment.vertexStringLow;
-      // Count spaces instead of split (faster - avoids creating array)
-      // "x y x y" has 3 spaces = 4 vertices, need 6 vertices = 5+ spaces
       if (!vertexString) continue;
+
+      const rawVerts = isHighQuality
+        ? fragment.simplifiedVerticesHigh
+        : fragment.simplifiedVerticesLow;
+      const vertices = rawVerts.map((v) => ({
+        x: v.x - fragment.centerX,
+        y: v.y - fragment.centerY,
+      }));
+
       let spaceCount = 0;
       for (let i = 0; i < vertexString.length && spaceCount < 5; i++) {
         if (vertexString[i] === " ") spaceCount++;
@@ -247,6 +262,7 @@ export class FragmentManager implements IFragmentManager {
         atlasKey: atlas.atlasKey,
         frameName: atlas.frameNames[index],
         vertexString,
+        vertices,
         originX: fragment.originX,
         originY: fragment.originY,
         rotation,
@@ -262,7 +278,10 @@ export class FragmentManager implements IFragmentManager {
       });
     }
 
-    const maxArea = Math.max(...queuedItems.map((q) => q.area), 1);
+    let maxArea = 0;
+    for (let i = 0; i < queuedItems.length; i++) {
+      if (queuedItems[i].area > maxArea) maxArea = queuedItems[i].area;
+    }
     this.maxFragmentArea = Math.max(this.maxFragmentArea, maxArea);
 
     const immediateBudget = Math.max(
@@ -272,14 +291,19 @@ export class FragmentManager implements IFragmentManager {
     const maxImmediate = this.isLowEndDevice
       ? FRAGMENT_MANAGER_CONFIG.lowEndImmediateFragments
       : FRAGMENT_MANAGER_CONFIG.immediateFragments;
-    const immediateCount = Math.min(maxImmediate, queuedItems.length, immediateBudget);
 
-    for (let i = 0; i < immediateCount; i++) {
+    const budgetStart = performance.now();
+    let immediateCount = 0;
+    for (let i = 0; i < queuedItems.length; i++) {
+      if (immediateCount >= maxImmediate || immediateCount >= immediateBudget) break;
+      if (performance.now() - budgetStart >= IMMEDIATE_TIME_BUDGET_MS) break;
+
       const data = queuedItems[i];
       try {
         const body = this.createFragmentFromQueueData(data);
         fragmentImages.push(body);
         this.frameCreatedCount++;
+        immediateCount++;
       } catch (e) {
         console.warn("Immediate fragment creation failed:", e);
       }
@@ -295,26 +319,44 @@ export class FragmentManager implements IFragmentManager {
   public processQueue(): void {
     this.frameCreatedCount = 0;
 
-    if (this.destroyed || this.fragmentQueue.length === 0) return;
+    if (this.destroyed || this.fragmentQueueHead >= this.fragmentQueue.length) {
+      this.compactQueue();
+      return;
+    }
 
     const maxPerFrame = this.isLowEndDevice
       ? FRAGMENT_MANAGER_CONFIG.lowEndQueuePerFrame
       : FRAGMENT_MANAGER_CONFIG.maxQueueProcessingPerFrame;
 
-    const toProcess = Math.min(maxPerFrame, this.fragmentQueue.length);
+    const budgetStart = performance.now();
+    let processed = 0;
 
-    for (let i = 0; i < toProcess; i++) {
-      const data = this.fragmentQueue.shift()!;
+    while (this.fragmentQueueHead < this.fragmentQueue.length && processed < maxPerFrame) {
+      if (performance.now() - budgetStart >= IMMEDIATE_TIME_BUDGET_MS) break;
+
+      const data = this.fragmentQueue[this.fragmentQueueHead++];
       try {
         this.createFragmentFromQueueData(data);
+        processed++;
       } catch (e) {
         console.warn("Queued fragment creation failed:", e);
       }
     }
+
+    if (this.fragmentQueueHead >= this.fragmentQueue.length) {
+      this.compactQueue();
+    }
+  }
+
+  private compactQueue(): void {
+    if (this.fragmentQueueHead > 0) {
+      this.fragmentQueue.length = 0;
+      this.fragmentQueueHead = 0;
+    }
   }
 
   public hasQueuedFragments(): boolean {
-    return this.fragmentQueue.length > 0;
+    return this.fragmentQueueHead < this.fragmentQueue.length;
   }
 
   private createFragmentFromQueueData(data: QueuedFragment): Phaser.Physics.Matter.Image {
@@ -324,6 +366,7 @@ export class FragmentManager implements IFragmentManager {
       data.atlasKey,
       data.frameName,
       data.vertexString,
+      data.vertices,
       data.originX,
       data.originY,
       data.density,
@@ -352,16 +395,20 @@ export class FragmentManager implements IFragmentManager {
       (body.body as Matter.Body).label = BodyLabels.FRAGMENT;
     }
 
+    const material = data.material;
+    const area = data.area;
     body.setOnCollide((event: Phaser.Types.Physics.Matter.MatterCollisionData) => {
-      this.handleFragmentCollision(event, data.material, data.area);
+      this.handleFragmentCollision(event, material, area);
     });
 
     this.activeFragments.push({
       body,
       spawnTime: data.spawnTime,
       poolSlotIndex,
-      material: data.material,
-      area: data.area,
+      material,
+      area,
+      vertexString: data.vertexString,
+      vertices: data.vertices,
     });
 
     return body;
@@ -372,15 +419,11 @@ export class FragmentManager implements IFragmentManager {
     material: BlockMaterial,
     area: number
   ): void {
-    const velocityA = event.bodyA.velocity;
-    const velocityB = event.bodyB.velocity;
-    const relativeVelocity = {
-      x: velocityA.x - velocityB.x,
-      y: velocityA.y - velocityB.y,
-    };
-    const speedSquared = relativeVelocity.x ** 2 + relativeVelocity.y ** 2;
+    const dx = event.bodyA.velocity.x - event.bodyB.velocity.x;
+    const dy = event.bodyA.velocity.y - event.bodyB.velocity.y;
+    const speedSquared = dx * dx + dy * dy;
 
-    if (speedSquared < FRAGMENT_MANAGER_CONFIG.minImpactSpeedForSound ** 2) return;
+    if (speedSquared < FRAGMENT_MANAGER_CONFIG.minFragmentSpeed ** 2) return;
 
     const now = Date.now();
     const impactSpeed = Math.sqrt(speedSquared);
@@ -416,10 +459,8 @@ export class FragmentManager implements IFragmentManager {
       this.activeFragments.length > 0 &&
       this.activeFragments.length + incomingCount > FRAGMENT_MANAGER_CONFIG.maxActiveFragments
     ) {
-      const entry = this.activeFragments.shift();
-      if (entry) {
-        this.releaseFragment(entry.body, entry.poolSlotIndex);
-      }
+      const entry = this.activeFragments.shift()!;
+      this.releaseFragment(entry.body, entry.poolSlotIndex, entry.vertexString);
     }
   }
 
@@ -429,6 +470,7 @@ export class FragmentManager implements IFragmentManager {
     textureKey: string,
     frameName: string,
     vertexString: string,
+    vertices: { x: number; y: number }[],
     originX: number,
     originY: number,
     density: number,
@@ -460,6 +502,7 @@ export class FragmentManager implements IFragmentManager {
         textureKey,
         frameName,
         vertexString,
+        vertices,
         density,
         restitution,
         friction,
@@ -478,16 +521,16 @@ export class FragmentManager implements IFragmentManager {
       return null;
     }
 
-    const poolIdx = indices.pop()!;
-    const pooled = this.fragmentPool[poolIdx];
-
-    if (indices.length === 0) {
-      this.poolByVertexString.delete(vertexString);
+    while (indices.length > 0) {
+      const poolIdx = indices.pop()!;
+      const pooled = this.fragmentPool[poolIdx];
+      if (pooled && pooled.body?.scene) {
+        pooled.inUse = true;
+        return { body: pooled.body, poolIdx };
+      }
     }
 
-    pooled.inUse = true;
-
-    return { body: pooled.body, poolIdx };
+    return null;
   }
 
   private reinitializePooledFragment(
@@ -522,7 +565,8 @@ export class FragmentManager implements IFragmentManager {
     y: number,
     textureKey: string,
     frameName: string,
-    vertexString: string,
+    _vertexString: string,
+    vertices: { x: number; y: number }[],
     density: number,
     restitution: number,
     friction: number,
@@ -533,7 +577,7 @@ export class FragmentManager implements IFragmentManager {
     const body = this.scene.matter.add.image(x, y, textureKey, frameName, {
       shape: {
         type: "fromVertices",
-        verts: vertexString,
+        verts: vertices,
       },
       density,
       restitution,
@@ -541,18 +585,17 @@ export class FragmentManager implements IFragmentManager {
       frictionAir: FRAGMENT_CONFIG.frictionAir,
     });
 
-    body
-      .setOrigin(originX, originY)
-      .setRotation(rotation)
-      .setDepth(FRAGMENT_MANAGER_CONFIG.depth)
-      .setCollisionCategory(CollisionCategory.DEBRIS)
-      .setCollidesWith([
-        CollisionCategory.BLOCK,
-        CollisionCategory.GROUND,
-        CollisionCategory.DEBRIS,
-        CollisionCategory.PIG,
-        CollisionCategory.BIRD,
-      ]);
+    body.setOrigin(originX, originY);
+    body.setRotation(rotation);
+    body.setDepth(FRAGMENT_MANAGER_CONFIG.depth);
+    body.setCollisionCategory(CollisionCategory.DEBRIS);
+    body.setCollidesWith([
+      CollisionCategory.BLOCK,
+      CollisionCategory.GROUND,
+      CollisionCategory.DEBRIS,
+      CollisionCategory.PIG,
+      CollisionCategory.BIRD,
+    ]);
 
     if (body.body) {
       (body.body as Matter.Body).label = BodyLabels.FRAGMENT;
@@ -561,81 +604,48 @@ export class FragmentManager implements IFragmentManager {
     return body;
   }
 
-  private releaseFragment(body: Phaser.Physics.Matter.Image, returnToSlot?: number): void {
+  private releaseFragment(
+    body: Phaser.Physics.Matter.Image,
+    returnToSlot?: number,
+    vertexString?: string
+  ): void {
     if (!body.scene || this.fragmentPool.length >= FRAGMENT_MANAGER_CONFIG.maxPoolSize) {
       if (body.scene) {
         body.destroy();
       }
-      // Return slot to available if specified
-      if (returnToSlot !== undefined) {
-        this.availablePoolSlots.push(returnToSlot);
+      if (returnToSlot !== undefined && returnToSlot < this.fragmentPool.length) {
+        this.fragmentPool[returnToSlot] = null as unknown as PooledFragment;
       }
       return;
     }
 
-    const vertexString = this.extractVertexStringFromBody(body);
+    body.setVelocity(0, 0);
+    body.setAngularVelocity(0);
+    body.setSensor(true);
+    body.setStatic(true);
+    body.setIgnoreGravity(true);
+    body.setPosition(
+      FRAGMENT_MANAGER_CONFIG.poolHidePosition,
+      FRAGMENT_MANAGER_CONFIG.poolHidePosition
+    );
+    body.setVisible(false);
+    body.setActive(false);
+    Matter.Sleeping.set(body.body as Matter.Body, true);
 
-    body
-      .setVelocity(0, 0)
-      .setAngularVelocity(0)
-      .setSensor(true)
-      .setStatic(true)
-      .setIgnoreGravity(true)
-      .setPosition(
-        FRAGMENT_MANAGER_CONFIG.poolHidePosition,
-        FRAGMENT_MANAGER_CONFIG.poolHidePosition
-      )
-      .setVisible(false)
-      .setActive(false)
-      .setToSleep();
+    if (returnToSlot !== undefined && vertexString) {
+      const pooled: PooledFragment = { body, vertexString, inUse: false };
+      if (returnToSlot < this.fragmentPool.length && this.fragmentPool[returnToSlot] === null) {
+        this.fragmentPool[returnToSlot] = pooled;
+      } else {
+        this.fragmentPool.push(pooled);
+      }
 
-    let poolIdx: number;
-    if (returnToSlot !== undefined && returnToSlot < this.fragmentPool.length) {
-      // Return to the original slot
-      poolIdx = returnToSlot;
-      this.fragmentPool[poolIdx] = { body, vertexString, inUse: false };
-    } else if (this.availablePoolSlots.length > 0) {
-      poolIdx = this.availablePoolSlots.pop()!;
-      this.fragmentPool[poolIdx] = { body, vertexString, inUse: false };
-    } else {
-      poolIdx = this.fragmentPool.length;
-      this.fragmentPool.push({ body, vertexString, inUse: false });
-    }
-
-    if (vertexString) {
       if (!this.poolByVertexString.has(vertexString)) {
         this.poolByVertexString.set(vertexString, []);
       }
-      this.poolByVertexString.get(vertexString)!.push(poolIdx);
-    }
-  }
-
-  private extractVertexStringFromBody(body: Phaser.Physics.Matter.Image): string {
-    const matterBody = body.body as Matter.Body;
-    if (!matterBody || !matterBody.vertices || matterBody.vertices.length < 3) {
-      return "";
-    }
-
-    const centroid = {
-      x: matterBody.vertices.reduce((sum, v) => sum + v.x, 0) / matterBody.vertices.length,
-      y: matterBody.vertices.reduce((sum, v) => sum + v.y, 0) / matterBody.vertices.length,
-    };
-
-    return matterBody.vertices
-      .map((v) => `${(v.x - centroid.x).toFixed(2)} ${(v.y - centroid.y).toFixed(2)}`)
-      .join(" ");
-  }
-
-  private cleanupFragment(body: Phaser.Physics.Matter.Image, poolSlotIndex?: number): void {
-    if (this.destroyed) return;
-
-    if (body.active) {
-      this.releaseFragment(body, poolSlotIndex);
-    }
-
-    const idx = this.activeFragments.findIndex((entry) => entry.body === body);
-    if (idx > -1) {
-      this.activeFragments.splice(idx, 1);
+      this.poolByVertexString.get(vertexString)!.push(returnToSlot);
+    } else if (body.scene) {
+      body.destroy();
     }
   }
 
@@ -672,7 +682,6 @@ export class FragmentManager implements IFragmentManager {
         if (target.isDestroyed()) continue;
 
         const targetPos = target.getPosition();
-
         const dx = fragPos.x - targetPos.x;
         const dy = fragPos.y - targetPos.y;
         const distSquared = dx * dx + dy * dy;
@@ -698,8 +707,7 @@ export class FragmentManager implements IFragmentManager {
       const entry = this.activeFragments[i];
       const fragment = entry.body;
       if (!fragment.active) {
-        // Release inactive fragments to pool instead of orphaning them
-        this.releaseFragment(fragment, entry.poolSlotIndex);
+        this.releaseFragment(fragment, entry.poolSlotIndex, entry.vertexString);
         this.activeFragments.splice(i, 1);
         continue;
       }
@@ -711,8 +719,20 @@ export class FragmentManager implements IFragmentManager {
         pos.y < bounds.minY - margin ||
         pos.y > bounds.maxY + margin
       ) {
-        this.cleanupFragment(fragment, entry.poolSlotIndex);
+        this.cleanupFragment(fragment, entry.poolSlotIndex, entry.vertexString);
       }
+    }
+  }
+
+  private cleanupFragment(
+    fragment: Phaser.Physics.Matter.Image,
+    poolSlotIndex?: number,
+    vertexString?: string
+  ): void {
+    this.releaseFragment(fragment, poolSlotIndex, vertexString);
+    const idx = this.activeFragments.findIndex((e) => e.body === fragment);
+    if (idx >= 0) {
+      this.activeFragments.splice(idx, 1);
     }
   }
 
@@ -724,8 +744,6 @@ export class FragmentManager implements IFragmentManager {
   ): void {
     if (this.destroyed || this.activeFragments.length === 0) return;
 
-    const radiusSquared = radius * radius;
-
     for (const entry of this.activeFragments) {
       const body = entry.body;
       if (!body || !body.body) continue;
@@ -733,54 +751,14 @@ export class FragmentManager implements IFragmentManager {
       const matterBody = body.body as Matter.Body;
       if (matterBody.isStatic) continue;
 
-      const dx = matterBody.position.x - explosionX;
-      const dy = matterBody.position.y - explosionY;
-      const distSquared = dx * dx + dy * dy;
-
-      // Early exit using squared distance - no sqrt needed for rejection
-      if (distSquared >= radiusSquared) continue;
-
-      const distance = Math.sqrt(distSquared);
-
-      if (matterBody.isSleeping) {
-        Matter.Sleeping.set(matterBody, false);
-      }
-
-      const distanceRatio = distance / radius;
-      let speed = pushSpeed * (1 - distanceRatio);
-      const massFactor = 1 / (1 + matterBody.mass * FRAGMENT_MANAGER_CONFIG.explosionMassFactor);
-      speed *= massFactor;
-
-      let dirX: number;
-      let dirY: number;
-      if (distance <= 0) {
-        const randomAngle = Math.random() * Math.PI * 2;
-        dirX = Math.cos(randomAngle);
-        dirY = Math.sin(randomAngle);
-      } else {
-        dirX = dx / distance;
-        dirY = dy / distance;
-      }
-
-      Matter.Body.setVelocity(matterBody, {
-        x: matterBody.velocity.x + dirX * speed,
-        y: matterBody.velocity.y + dirY * speed,
-      });
+      applyRadialImpulse(matterBody, explosionX, explosionY, radius, pushSpeed);
     }
   }
 
-  /**
-   * Pre-warm fragment atlases for the given block configurations.
-   * This should be called during scene loading to avoid frame spikes during gameplay.
-   */
   public async preWarmForLevel(configs: BlockPreWarmConfig[]): Promise<void> {
     return this.atlasCache.preWarmForLevel(configs);
   }
 
-  /**
-   * Reset state for a new level. Call this when transitioning between levels
-   * to reset the max fragment area used for haptic intensity scaling.
-   */
   public resetLevelState(): void {
     this.maxFragmentArea = 0;
     this.lastCollisionSoundTime = 0;
@@ -806,13 +784,12 @@ export class FragmentManager implements IFragmentManager {
     this.activeFragments = [];
 
     for (const pooled of this.fragmentPool) {
-      if (pooled.body.scene) {
+      if (pooled && pooled.body.scene) {
         pooled.body.destroy();
       }
     }
     this.fragmentPool = [];
     this.poolByVertexString.clear();
-    this.availablePoolSlots = [];
 
     this.atlasCache.destroy();
   }

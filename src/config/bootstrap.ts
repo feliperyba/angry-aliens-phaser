@@ -1,6 +1,5 @@
 import Phaser from "phaser";
 import { ServiceContainer, ServiceTokens } from "./registries/ServiceContainer";
-import { materialRegistry } from "./registries/MaterialConfigRegistry";
 import { GameStateManager } from "../systems/state/GameStateManager";
 import { ScoringSystem } from "../systems/scoring/ScoringSystem";
 import { ProgressManager } from "../systems/progress/ProgressManager";
@@ -12,10 +11,8 @@ import { GroundManager } from "../systems/GroundManager";
 import { BirdQueue } from "../systems/BirdQueue";
 import { PhysicsSettleDetector } from "../systems/PhysicsSettleDetector";
 import { WakeCascadeManager } from "../systems/WakeCascadeManager";
-import { InputHandler } from "../systems/input/InputHandler";
 import { CameraController } from "../systems/camera/CameraController";
 import type { Position } from "../types/Vector2";
-import type { PullData } from "../objects/slingshot-modules/SlingshotConfig";
 import { LevelBuilder } from "../systems/level/LevelBuilder";
 import {
   ConsoleLogger,
@@ -38,14 +35,11 @@ import type { IProgressManager } from "../systems/progress/IProgressManager";
 import type { IVFXManager } from "../interfaces/IVFXManager";
 import type { ICameraEffects } from "../interfaces/ICameraEffects";
 import type { IScorePopupManager } from "../interfaces/IScorePopupManager";
-import type { IInputHandler } from "../systems/input/IInputHandler";
 import type { ICameraController } from "../systems/camera/ICameraController";
 import type { ILevelBuilder } from "../systems/level/ILevelBuilder";
-import type { IExplosionSystem } from "../systems/explosion/IExplosionSystem";
-import type { IAudioSystem, ISFXPlayer } from "../interfaces/audio";
+import type { IAudioSystem } from "../interfaces/audio";
 import type { ITimeEffectsSettingsProvider } from "../interfaces/ITimeEffectsSettings";
 import type { IMobileSettingsProvider } from "../interfaces/IMobileSettings";
-import { ExplosionSystem } from "../systems/explosion/ExplosionSystem";
 
 export interface SceneContext {
   scene: Phaser.Scene;
@@ -59,8 +53,6 @@ export function bootstrapServices(): ServiceContainer {
   }
 
   const container = new ServiceContainer();
-
-  container.registerValue(ServiceTokens.MATERIAL_REGISTRY, materialRegistry);
 
   container.register<ITimeEffectsSettingsProvider>(
     ServiceTokens.TIME_EFFECTS_SETTINGS,
@@ -105,33 +97,6 @@ export function bootstrapServices(): ServiceContainer {
       manager.initialize(ctx.scene);
       return manager;
     },
-    false
-  );
-
-  container.registerSceneFactory<
-    IExplosionSystem,
-    SceneContext & {
-      vfxManager: IVFXManager;
-      cameraEffects: ICameraEffects;
-      sfx: ISFXPlayer;
-      scorePopupManager: IScorePopupManager;
-      scoringSystem: IScoringSystem;
-      explosionShaderManager: ExplosionShaderManager;
-      wakeManager: WakeCascadeManager;
-    }
-  >(
-    ServiceTokens.EXPLOSION_SYSTEM,
-    (_, ctx) =>
-      new ExplosionSystem({
-        vfxManager: ctx.vfxManager,
-        cameraEffects: ctx.cameraEffects,
-        sfx: ctx.sfx,
-        scorePopupManager: ctx.scorePopupManager,
-        scoringSystem: ctx.scoringSystem,
-        explosionShaderManager: ctx.explosionShaderManager,
-        scene: ctx.scene,
-        wakeManager: ctx.wakeManager,
-      }),
     false
   );
 
@@ -186,29 +151,6 @@ export function bootstrapServices(): ServiceContainer {
     false
   );
 
-  container.registerSceneFactory<
-    IInputHandler,
-    SceneContext & {
-      slingshotGetBird: () => Phaser.GameObjects.Image | null;
-      slingshotStartAiming: () => void;
-      slingshotUpdateAim: (x: number, y: number) => PullData | null;
-      slingshotCancel: () => void;
-      isPaused: () => boolean;
-      isGameOver: () => boolean;
-      isTransitioning: () => boolean;
-      canActivateAbility: () => boolean;
-      activateAbility: () => void;
-      isTouchDevice: () => boolean;
-      getAimHitboxRadius: () => number;
-      isBirdInFlight: () => boolean;
-      showTouchFeedback?: (
-        screenX: number,
-        screenY: number,
-        type: "tap" | "aim" | "fire" | "drag"
-      ) => void;
-    }
-  >(ServiceTokens.INPUT_HANDLER, (_, ctx) => new InputHandler(ctx), false);
-
   container.registerSceneFactory<ICameraController, SceneContext>(
     ServiceTokens.CAMERA_CONTROLLER,
     (_, ctx) => new CameraController({ scene: ctx.scene }),
@@ -238,13 +180,6 @@ export function getServiceContainer(): ServiceContainer {
     return bootstrapServices();
   }
   return globalContainer;
-}
-
-export function resetServiceContainer(): void {
-  if (globalContainer) {
-    globalContainer.clear();
-    globalContainer = null;
-  }
 }
 
 export function bootstrapAudio(game: Phaser.Game, scene: Phaser.Scene): IAudioSystem {

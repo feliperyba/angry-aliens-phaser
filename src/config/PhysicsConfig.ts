@@ -409,14 +409,14 @@ export interface PhysicsQualityProfileConfig {
 export const PHYSICS_QUALITY_CONFIG: PhysicsQualityProfileConfig = {
   high: {
     threshold: 0.75,
-    positionIterations: 4,
-    velocityIterations: 4,
-    constraintIterations: 3,
+    positionIterations: 6,
+    velocityIterations: 6,
+    constraintIterations: 4,
   },
   medium: {
     threshold: 0.5,
-    positionIterations: 2,
-    velocityIterations: 2,
+    positionIterations: 3,
+    velocityIterations: 3,
     constraintIterations: 2,
   },
   low: {
@@ -437,9 +437,9 @@ export interface DeviceDetectionConfig {
 export const DEVICE_DETECTION_CONFIG: DeviceDetectionConfig = {
   lowEndCpuCores: 2,
   smallScreenDimension: 414,
-  lowEndMobileMultiplier: 0.5,
+  lowEndMobileMultiplier: 0.6,
   smallScreenMultiplier: 0.6,
-  highEndMobileMultiplier: 0.8,
+  highEndMobileMultiplier: 1,
 };
 
 export interface BirdFlightConfig {

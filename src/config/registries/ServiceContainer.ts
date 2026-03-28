@@ -6,8 +6,6 @@ export const ServiceTokens = {
   VFX_MANAGER: Symbol("IVFXManager"),
   EXPLOSION_SHADER_MANAGER: Symbol("IExplosionShaderManager"),
   CAMERA_EFFECTS: Symbol("ICameraEffects"),
-  FRAGMENT_MANAGER: Symbol("IFragmentManager"),
-  EXPLOSION_SYSTEM: Symbol("IExplosionSystem"),
 
   // Audio
   AUDIO_SYSTEM: Symbol("IAudioSystem"),
@@ -25,8 +23,7 @@ export const ServiceTokens = {
   PHYSICS_SETTLE_DETECTOR: Symbol("IPhysicsSettleDetector"),
   WAKE_CASCADE_MANAGER: Symbol("IWakeCascadeManager"),
 
-  // Input & Camera
-  INPUT_HANDLER: Symbol("IInputHandler"),
+  // Camera
   CAMERA_CONTROLLER: Symbol("ICameraController"),
 
   // Level
@@ -36,10 +33,6 @@ export const ServiceTokens = {
   // Settings
   TIME_EFFECTS_SETTINGS: Symbol("ITimeEffectsSettingsProvider"),
   MOBILE_SETTINGS: Symbol("IMobileSettingsProvider"),
-
-  // Registries
-  MATERIAL_REGISTRY: Symbol("IMaterialConfigRegistry"),
-  ABILITY_REGISTRY: Symbol("IAbilityRegistry"),
 } as const;
 
 export type ServiceToken = (typeof ServiceTokens)[keyof typeof ServiceTokens];
@@ -149,16 +142,6 @@ export class ServiceContainer {
     this.sceneFactories.clear();
     this.singletons.clear();
     this.singletonFlags.clear();
-  }
-
-  clearSceneScoped(): void {
-    const tokensToRemove: ServiceToken[] = [];
-    this.singletonFlags.forEach((isSingleton, token) => {
-      if (!isSingleton && this.singletons.has(token)) {
-        tokensToRemove.push(token);
-      }
-    });
-    tokensToRemove.forEach((token) => this.singletons.delete(token));
   }
 
   createChild(): ServiceContainer {

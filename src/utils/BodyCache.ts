@@ -1,15 +1,19 @@
 import Matter from "matter-js";
 import Phaser from "phaser";
+import { BODY_CACHE_CONFIG } from "../config/PhysicsConfig";
 
-type MatterEngine = Matter.Engine | MatterJS.Engine;
+const MS_PER_FRAME = 16.67;
 
 export class BodyCache {
   private static instance: BodyCache | null = null;
-
   private cachedBodies: Matter.Body[] | null = null;
   private cacheFrame: number = -1;
-  private scene: Phaser.Scene | null = null;
-  private cacheExpiryFrames: number = 1;
+  private cacheExpiryMs: number;
+  private scene!: Phaser.Scene | null;
+
+  private constructor() {
+    this.cacheExpiryMs = BODY_CACHE_CONFIG.normalExpiryFrames * MS_PER_FRAME;
+  }
 
   static getInstance(): BodyCache {
     if (!BodyCache.instance) {
@@ -22,49 +26,38 @@ export class BodyCache {
     this.scene = scene;
     this.cachedBodies = null;
     this.cacheFrame = -1;
-    this.cacheExpiryFrames = 1;
+  }
+
+  setDestructionMode(enabled: boolean): void {
+    this.cacheExpiryMs = enabled
+      ? BODY_CACHE_CONFIG.destructionModeExpiryFrames * MS_PER_FRAME
+      : BODY_CACHE_CONFIG.normalExpiryFrames * MS_PER_FRAME;
   }
 
   reset(): void {
     this.cachedBodies = null;
     this.cacheFrame = -1;
-    this.cacheExpiryFrames = 1;
   }
 
   destroy(): void {
     this.cachedBodies = null;
-    this.scene = null;
     this.cacheFrame = -1;
-    this.cacheExpiryFrames = 1;
+    this.scene = null;
   }
 
-  /**
-   * Enable/disable destruction mode for extended cache validity.
-   * During destruction events, multiple delayed wake operations occur,
-   * so extending cache validity reduces repeated full body queries.
-   */
-  setDestructionMode(enabled: boolean): void {
-    this.cacheExpiryFrames = enabled ? 5 : 1; // 5 frames during destruction
-  }
-
-  getAllBodies(engine: MatterEngine): Matter.Body[] {
-    const currentFrame = this.scene?.time?.now ?? 0;
-
-    // Cache valid for cacheExpiryFrames (1 normally, 5 during destruction)
-    if (this.cachedBodies !== null && currentFrame - this.cacheFrame < this.cacheExpiryFrames) {
+  getAllBodies(engine: Matter.Engine): Matter.Body[] {
+    const currentMs = this.scene?.time?.now ?? 0;
+    if (this.cachedBodies !== null && currentMs - this.cacheFrame < this.cacheExpiryMs) {
       return this.cachedBodies;
     }
 
-    this.cachedBodies = Matter.Composite.allBodies(
-      (engine as Matter.Engine).world as unknown as Matter.Composite
-    );
-    this.cacheFrame = currentFrame;
-
+    this.cachedBodies = Matter.Composite.allBodies(engine.world as unknown as Matter.Composite);
+    this.cacheFrame = currentMs;
     return this.cachedBodies;
   }
 
   getBodiesInRegion(
-    engine: MatterEngine,
+    engine: Matter.Engine,
     bounds: { min: { x: number; y: number }; max: { x: number; y: number } }
   ): Matter.Body[] {
     const allBodies = this.getAllBodies(engine);

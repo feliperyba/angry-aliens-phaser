@@ -8,6 +8,8 @@ import { type ThemeColors, getThemeColors } from "./config/ThemeColors";
 import { type LayerConfig, getLayerConfigs } from "./config/LayerConfigs";
 import { SkyGradientRenderer } from "./utils/SkyGradientRenderer";
 import { PerformanceManager } from "../../systems/PerformanceManager";
+import { getMobileSafeBlendMode } from "../../utils/MobileBlendMode";
+import { MobileManager } from "../../systems/mobile/MobileManager";
 import {
   PARALLAX_POSITION_CONFIG,
   PARALLAX_SCROLL_CONFIG,
@@ -128,7 +130,12 @@ export class ParallaxManager {
     const glowSprite = this.scene.add.image(glowConfig.x, glowConfig.y, textureKey);
     glowSprite.setScrollFactor(0);
     glowSprite.setDepth(glowConfig.depth);
-    glowSprite.setBlendMode(Phaser.BlendModes.ADD);
+    glowSprite.setBlendMode(
+      getMobileSafeBlendMode(
+        PerformanceManager.getQualityMultiplier(this.scene),
+        MobileManager.getInstance().isMobile()
+      )
+    );
     glowSprite.setOrigin(0.5, 0.5);
 
     this.atmosphereGlow = glowSprite;

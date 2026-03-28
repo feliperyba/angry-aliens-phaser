@@ -32,7 +32,9 @@ export class CameraEffects implements ICameraEffects {
   private maxShakeIntensity: number = CAMERA_EFFECTS_CONFIG.maxShakeIntensity;
   private isSlowMotion: boolean = false;
   private slowMotionTween: Phaser.Tweens.Tween | null = null;
+  private flashTween: Phaser.Tweens.Tween | null = null;
   private shakeOffset: Offset = { x: 0, y: 0 };
+  private prevShakeOffset: Offset = { x: 0, y: 0 };
   private activeShakes: ActiveShake[] = [];
   private pendingTimers: Phaser.Time.TimerEvent[] = [];
   private updateCallback: () => void;
@@ -80,7 +82,12 @@ export class CameraEffects implements ICameraEffects {
   }
 
   private updateShakes(): void {
-    if (this.destroyed || this.activeShakes.length === 0) return;
+    if (this.destroyed || this.activeShakes.length === 0) {
+      this.shakeOffset.x = 0;
+      this.shakeOffset.y = 0;
+      this.unregisterUpdate();
+      return;
+    }
 
     const now = this.scene.time.now;
     const newShakes: ActiveShake[] = [];
@@ -134,8 +141,18 @@ export class CameraEffects implements ICameraEffects {
 
     this.activeShakes = newShakes;
 
+    this.camera.scrollX -= this.prevShakeOffset.x;
+    this.camera.scrollY -= this.prevShakeOffset.y;
+    this.camera.scrollX += this.shakeOffset.x;
+    this.camera.scrollY += this.shakeOffset.y;
+    this.prevShakeOffset.x = this.shakeOffset.x;
+    this.prevShakeOffset.y = this.shakeOffset.y;
+
     if (this.activeShakes.length === 0) {
-      this.shakeOffset = { x: 0, y: 0 };
+      this.shakeOffset.x = 0;
+      this.shakeOffset.y = 0;
+      this.prevShakeOffset.x = 0;
+      this.prevShakeOffset.y = 0;
       this.unregisterUpdate();
     }
   }
@@ -152,12 +169,19 @@ export class CameraEffects implements ICameraEffects {
   public advancedShake(config: ShakeConfig): void {
     if (this.destroyed) return;
 
-    const { intensity, duration } = config;
-    const clampedIntensity = Math.min(intensity, this.maxShakeIntensity);
+    const clampedIntensity = Math.min(config.intensity, this.maxShakeIntensity);
+
+    this.activeShakes.push({
+      startTime: this.scene.time.now,
+      duration: config.duration,
+      intensity: clampedIntensity,
+      frequency: config.frequency ?? CAMERA_EFFECTS_CONFIG.shake.frequency,
+      decay: config.decay ?? true,
+      direction: config.direction ?? "random",
+      lastShakeTime: 0,
+    });
 
     this.registerUpdate();
-
-    this.camera.shake(duration, clampedIntensity);
   }
 
   public shakeFromImpact(impactSpeed: number, material?: string): void {
@@ -216,7 +240,7 @@ export class CameraEffects implements ICameraEffects {
       duration,
       frequency: CAMERA_EFFECTS_CONFIG.shake.frequency,
       decay: true,
-      direction: "random",
+      direction: Math.abs(dx) > Math.abs(dy) ? "horizontal" : "vertical",
     });
   }
 
@@ -238,11 +262,18 @@ export class CameraEffects implements ICameraEffects {
     this.flashOverlay.setFillStyle(color, intensity);
     this.flashOverlay.setAlpha(1);
 
-    this.scene.tweens.add({
+    if (this.flashTween) {
+      this.flashTween.stop();
+    }
+
+    this.flashTween = this.scene.tweens.add({
       targets: this.flashOverlay,
       alpha: 0,
       duration: CAMERA_EFFECTS_CONFIG.flash.duration,
       ease: "Quad.easeOut",
+      onComplete: () => {
+        this.flashTween = null;
+      },
     });
   }
 

@@ -286,10 +286,7 @@ export class InputHandler implements IInputHandler {
       ) {
         this.pinchPointer1 = activePointers[0];
         this.pinchPointer2 = activePointers[1];
-        this.pinchStartDistance = this.getPinchDistance(
-          activePointers[0],
-          activePointers[1]
-        );
+        this.pinchStartDistance = this.getPinchDistance(activePointers[0], activePointers[1]);
         this.pinchStartZoom = this.scene.cameras.main.zoom;
       }
     }

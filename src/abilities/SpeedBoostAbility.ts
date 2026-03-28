@@ -5,6 +5,9 @@ import type { Position, Velocity } from "../types/Vector2";
 import { SPEED_BOOST_TRAIL } from "../config/VFXConfig";
 import { getFastBodyCollisionDetector } from "../utils/FastBodyCollisionDetector";
 import Phaser from "phaser";
+import { getMobileSafeBlendMode } from "../utils/MobileBlendMode";
+import { PerformanceManager } from "../systems/PerformanceManager";
+import { MobileManager } from "../systems/mobile/MobileManager";
 
 interface PooledImage {
   image: Phaser.GameObjects.Image;
@@ -95,6 +98,10 @@ export class SpeedBoostAbility extends BaseBirdAbility {
   private createBoostTrail(scene: Phaser.Scene, position: Position, velocity: Velocity): void {
     const angle = Math.atan2(velocity.y, velocity.x);
     const cfg = SPEED_BOOST_TRAIL;
+    const _blend = getMobileSafeBlendMode(
+      PerformanceManager.getQualityMultiplier(scene),
+      MobileManager.getInstance().isMobile()
+    );
 
     for (let i = 0; i < cfg.traceParticles; i++) {
       const spreadAngle =
@@ -110,7 +117,7 @@ export class SpeedBoostAbility extends BaseBirdAbility {
         `trace_0${(i % 3) + 1}`
       );
       trace.setScale(cfg.traceScale);
-      trace.setBlendMode("ADD");
+      trace.setBlendMode(_blend);
       trace.setTint(cfg.traceTint);
 
       scene.tweens.add({
@@ -136,7 +143,7 @@ export class SpeedBoostAbility extends BaseBirdAbility {
         "light_01"
       );
       glow.setScale(cfg.glowBaseScale + i * cfg.glowScaleStep);
-      glow.setBlendMode("ADD");
+      glow.setBlendMode(_blend);
       glow.setTint(cfg.glowTint);
       glow.setAlpha(cfg.glowAlpha);
 

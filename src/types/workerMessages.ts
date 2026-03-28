@@ -35,11 +35,16 @@ export interface AtlasFrameData {
   frameHeight: number;
 }
 
+export interface AtlasFragmentData {
+  bounds: { minX: number; minY: number; maxX: number; maxY: number };
+  vertices: { x: number; y: number }[];
+}
+
 export interface AtlasGenerateRequest {
   type: "generateAtlas";
   id: string;
   textureBitmap: ImageBitmap;
-  fragments: SerializedFragmentShape[];
+  fragments: AtlasFragmentData[];
   width: number;
   height: number;
   material: string;

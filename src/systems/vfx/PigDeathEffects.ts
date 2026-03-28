@@ -5,6 +5,9 @@ import {
   type PigDeathConfig,
 } from "../../config/VFXConfig";
 import { ImagePool } from "../../utils/ObjectPool";
+import { getMobileSafeBlendMode } from "../../utils/MobileBlendMode";
+import { PerformanceManager } from "../PerformanceManager";
+import { MobileManager } from "../mobile/MobileManager";
 
 export class PigDeathEffects {
   private puffPools: Map<string, ImagePool> = new Map();
@@ -59,6 +62,10 @@ export class PigDeathEffects {
   private spawnPuffCloud(x: number, y: number, scale: number, config: PigDeathConfig): void {
     const puffConfig = config.puff;
     const puffs: { image: Phaser.GameObjects.Image; pool: ImagePool | undefined }[] = [];
+    const _blend = getMobileSafeBlendMode(
+      PerformanceManager.getQualityMultiplier(this.scene),
+      MobileManager.getInstance().isMobile()
+    );
 
     for (let i = 0; i < puffConfig.count; i++) {
       const texture = puffConfig.textures[i % puffConfig.textures.length];
@@ -75,7 +82,7 @@ export class PigDeathEffects {
       puff.setScale(PIG_DEATH_VFX_CONFIG.initialPuffScale);
       puff.setTint(puffConfig.color);
       puff.setAlpha(puffConfig.alpha);
-      puff.setBlendMode(Phaser.BlendModes.ADD);
+      puff.setBlendMode(_blend);
       puff.setDepth(PIG_DEATH_VFX_CONFIG.depth);
 
       puffs.push({ image: puff, pool });

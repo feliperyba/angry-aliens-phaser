@@ -25,7 +25,7 @@ export interface ScrollBounds {
   maxScrollX: number;
 }
 
-export interface ImpactFocusBounds extends ScrollBounds {}
+export type ImpactFocusBounds = ScrollBounds;
 
 export interface ImpactFocusStartState {
   lockedScrollY: number;

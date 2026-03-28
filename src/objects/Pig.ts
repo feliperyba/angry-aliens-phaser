@@ -105,15 +105,9 @@ export class Pig extends PhysicsEntity {
     const bodyA = event.bodyA;
     const bodyB = event.bodyB;
 
-    const velocityA = bodyA.velocity;
-    const velocityB = bodyB.velocity;
-
-    const relativeVelocity = {
-      x: velocityA.x - velocityB.x,
-      y: velocityA.y - velocityB.y,
-    };
-
-    const speedSquared = relativeVelocity.x ** 2 + relativeVelocity.y ** 2;
+    const dvx = bodyA.velocity.x - bodyB.velocity.x;
+    const dvy = bodyA.velocity.y - bodyB.velocity.y;
+    const speedSquared = dvx * dvx + dvy * dvy;
 
     // Early exit for low-impact collisions
     if (speedSquared < MIN_IMPACT_THRESHOLD_SQ) return;
@@ -217,7 +211,10 @@ export class Pig extends PhysicsEntity {
       max: { x: pos.x + radius, y: pos.y + radius },
     };
 
-    const bodiesInRegion = BodyCache.getInstance().getBodiesInRegion(engine, bounds);
+    const bodiesInRegion = BodyCache.getInstance().getBodiesInRegion(
+      engine as unknown as Matter.Engine,
+      bounds
+    );
 
     for (const body of bodiesInRegion) {
       if (body.isStatic) continue;

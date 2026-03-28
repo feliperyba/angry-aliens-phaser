@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import Matter from "matter-js";
 import { BlockShape } from "../config/assetManifest";
 
 export interface BlockBodyConfig {
@@ -17,6 +18,19 @@ export interface IBlockShapeStrategy {
 class CircleShapeStrategy implements IBlockShapeStrategy {
   applyBody(matterImage: Phaser.Physics.Matter.Image, config: BlockBodyConfig): void {
     const radius = Math.min(config.width, config.height) / 2;
+    const existingBody = matterImage.body as Matter.Body | undefined;
+    if (
+      existingBody &&
+      !existingBody.isStatic &&
+      existingBody.circleRadius &&
+      Math.abs(existingBody.circleRadius - radius) < 0.5
+    ) {
+      Matter.Body.setDensity(existingBody, config.density);
+      existingBody.restitution = config.restitution;
+      existingBody.friction = config.friction;
+      existingBody.label = config.label;
+      return;
+    }
     matterImage.setCircle(radius, {
       density: config.density,
       restitution: config.restitution,
@@ -33,18 +47,20 @@ class TriangleShapeStrategy implements IBlockShapeStrategy {
     const hw = width / 2;
     const hh = height / 2;
     const isRightAngled = width === height;
-    let verts: string;
+    let verts: { x: number; y: number }[];
 
     if (isRightAngled) {
-      // 1x1 (70x70): Right-angled triangle, right angle at bottom-left
-      // Vertices in pixel coords: (0,0), (0,70), (70,70)
-      // Vertices relative to center: (-hw,-hh), (-hw,hh), (hw,hh)
-      verts = `${-hw} ${-hh} ${-hw} ${hh} ${hw} ${hh}`;
+      verts = [
+        { x: -hw, y: -hh },
+        { x: -hw, y: hh },
+        { x: hw, y: hh },
+      ];
     } else {
-      // 2x1 (140x70): Isosceles triangle pointing UP (apex at top)
-      // Vertices in pixel coords: (0,70), (70,0), (140,70)
-      // Vertices relative to center: (-hw,hh), (0,-hh), (hw,hh)
-      verts = `${-hw} ${hh} 0 ${-hh} ${hw} ${hh}`;
+      verts = [
+        { x: -hw, y: hh },
+        { x: 0, y: -hh },
+        { x: hw, y: hh },
+      ];
     }
 
     matterImage.setBody(
@@ -70,6 +86,19 @@ class TriangleShapeStrategy implements IBlockShapeStrategy {
 
 class RectangleShapeStrategy implements IBlockShapeStrategy {
   applyBody(matterImage: Phaser.Physics.Matter.Image, config: BlockBodyConfig): void {
+    const existingBody = matterImage.body as Matter.Body | undefined;
+    if (
+      existingBody &&
+      !existingBody.isStatic &&
+      existingBody.vertices.length === 4 &&
+      Math.abs(existingBody.area - config.width * config.height) < 1
+    ) {
+      Matter.Body.setDensity(existingBody, config.density);
+      existingBody.restitution = config.restitution;
+      existingBody.friction = config.friction;
+      existingBody.label = config.label;
+      return;
+    }
     matterImage.setRectangle(config.width, config.height, {
       density: config.density,
       restitution: config.restitution,

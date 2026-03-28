@@ -1,5 +1,8 @@
 import Phaser from "phaser";
 import { DesignTokens as T } from "../../config/DesignTokens";
+import { getMobileSafeBlendMode } from "../../utils/MobileBlendMode";
+import { PerformanceManager } from "../../systems/PerformanceManager";
+import { MobileManager } from "../../systems/mobile/MobileManager";
 
 export interface StarRevealConfig {
   x: number;
@@ -44,7 +47,10 @@ export class StarRevealAnimation extends Phaser.GameObjects.Container {
         angle: { min: 0, max: 360 },
         scale: { start: T.star.particleScale, end: 0 },
         lifespan: 500,
-        blendMode: "ADD",
+        blendMode: getMobileSafeBlendMode(
+          PerformanceManager.getQualityMultiplier(this.scene),
+          MobileManager.getInstance().isMobile()
+        ),
         quantity: 10,
         emitting: false,
         frequency: -1,

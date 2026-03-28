@@ -5,6 +5,9 @@ import { LEVEL_ATLAS_KEY } from "../config/assetManifest";
 import { BirdQueueConfig } from "../config/BirdQueueConfig";
 import type { IBirdQueue } from "../interfaces/IBirdQueue";
 import type { Position } from "../types/Vector2";
+import { getMobileSafeBlendMode } from "../utils/MobileBlendMode";
+import { PerformanceManager } from "./PerformanceManager";
+import { MobileManager } from "./mobile/MobileManager";
 
 export class BirdQueue implements IBirdQueue {
   private scene: Phaser.Scene;
@@ -56,7 +59,10 @@ export class BirdQueue implements IBirdQueue {
         scale: { start: BirdQueueConfig.trail.scaleStart, end: BirdQueueConfig.trail.scaleEnd },
         alpha: { start: BirdQueueConfig.trail.alphaStart, end: BirdQueueConfig.trail.alphaEnd },
         tint: [...BirdQueueConfig.trail.tints],
-        blendMode: "ADD",
+        blendMode: getMobileSafeBlendMode(
+          PerformanceManager.getQualityMultiplier(this.scene),
+          MobileManager.getInstance().isMobile()
+        ),
         emitting: false,
       });
       this.trailEmitter.setDepth(BirdQueueConfig.trail.depth);

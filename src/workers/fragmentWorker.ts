@@ -3,6 +3,7 @@ import type {
   FragmentWorkerRequest,
   FragmentWorkerResponse,
   SerializedFragmentShape,
+  AtlasFragmentData,
   AtlasGenerateRequest,
   AtlasGenerateResponse,
   AtlasFrameData,
@@ -144,7 +145,7 @@ function getNearbyPoints(
 }
 
 function computeVoronoiCells(points: Vector2[], width: number, height: number): VoronoiCell[] {
-  if (points.length <= 16) {
+  if (points.length < 16) {
     return computeVoronoiCellsDirect(points, width, height);
   }
   return computeVoronoiCellsOptimized(points, width, height);
@@ -472,7 +473,7 @@ function generateFragments(
 
 function generateAtlas(
   textureBitmap: ImageBitmap,
-  fragments: SerializedFragmentShape[],
+  fragments: AtlasFragmentData[],
   width: number,
   height: number
 ): {
@@ -486,14 +487,16 @@ function generateAtlas(
   }
 
   const padding = 2;
-  const maxFragmentWidth = Math.max(
-    4,
-    ...fragments.map((f) => Math.ceil(f.bounds.maxX - f.bounds.minX))
-  );
-  const maxFragmentHeight = Math.max(
-    4,
-    ...fragments.map((f) => Math.ceil(f.bounds.maxY - f.bounds.minY))
-  );
+  let maxFragmentWidth = 4;
+  for (let i = 0; i < fragments.length; i++) {
+    const w = Math.ceil(fragments[i].bounds.maxX - fragments[i].bounds.minX);
+    if (w > maxFragmentWidth) maxFragmentWidth = w;
+  }
+  let maxFragmentHeight = 4;
+  for (let i = 0; i < fragments.length; i++) {
+    const h = Math.ceil(fragments[i].bounds.maxY - fragments[i].bounds.minY);
+    if (h > maxFragmentHeight) maxFragmentHeight = h;
+  }
 
   const cellWidth = maxFragmentWidth + padding * 2;
   const cellHeight = maxFragmentHeight + padding * 2;

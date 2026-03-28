@@ -16,6 +16,7 @@ import type { Pig } from "../../objects/Pig";
 import type { Block } from "../../objects/Block";
 import type { DestructionTracker } from "../../systems/DestructionTracker";
 import type { BlockPreWarmConfig } from "../../systems/fragment/FragmentAtlasCache";
+import { ensureOversizedTextureExists } from "../../config/assetManifest";
 import {
   GameLifecycleManager,
   type GameLifecycleDeps,
@@ -196,9 +197,10 @@ export class LevelSetup {
    * This generates atlases during scene loading to avoid frame spikes during gameplay.
    */
   private static preWarmFragmentAtlases(blocks: Block[], vfxManager: IVFXManager): void {
-    if (!vfxManager.preWarmFragmentAtlases) return;
+    if (!vfxManager.preWarmFragmentAtlases || blocks.length === 0) return;
 
-    // Extract unique block configurations
+    const scene = blocks[0].scene;
+
     const configMap = new Map<string, BlockPreWarmConfig>();
 
     for (const block of blocks) {
@@ -207,7 +209,6 @@ export class LevelSetup {
       const height = block.getHeight();
       const material = block.getMaterial();
 
-      // Create a unique key for this configuration
       const configKey = `${material}_${textureKey}_${width}x${height}`;
 
       if (!configMap.has(configKey)) {
@@ -218,13 +219,20 @@ export class LevelSetup {
           height,
         });
       }
+
+      const conditions: Array<"pristine" | "dented" | "cracked"> = [
+        "pristine",
+        "dented",
+        "cracked",
+      ];
+      for (const condition of conditions) {
+        const texKey = `${material}_${block.shape}_${condition}_${block.gridW}x${block.gridH}`;
+        ensureOversizedTextureExists(scene, texKey);
+      }
     }
 
     const configs = Array.from(configMap.values());
 
-    // Fire and forget - don't block scene loading
-    // Note: If pre-warm takes longer than expected, frame spikes may occur when
-    // breaking blocks before atlases finish generating. Fallback to on-demand is safe.
     vfxManager.preWarmFragmentAtlases(configs).catch((err) => {
       console.debug("FragmentAtlasCache: Pre-warm failed (will generate on-demand)", err);
     });

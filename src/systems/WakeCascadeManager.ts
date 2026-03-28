@@ -134,16 +134,11 @@ export class WakeCascadeManager implements IWakeCascadeManager {
   }
 
   private processWithSpatialQuery(): void {
-    const wakeRequests = [...this.pendingWakeRequests];
-    const cascadeRequests = [...this.pendingCascadeRequests];
+    // Reference swap instead of spread copy - avoids allocating new arrays
+    const wakeRequests = this.pendingWakeRequests;
+    const cascadeRequests = this.pendingCascadeRequests;
     this.pendingWakeRequests = [];
     this.pendingCascadeRequests = [];
-
-    // Pre-compute squared radii for wake requests (avoid sqrt in loop)
-    const wakeRequestsWithSquared = wakeRequests.map((req) => ({
-      ...req,
-      radiusSquared: req.radius * req.radius,
-    }));
 
     let minX = Infinity,
       minY = Infinity,
@@ -165,6 +160,21 @@ export class WakeCascadeManager implements IWakeCascadeManager {
       maxY = Math.max(maxY, req.y + WAKE_CASCADE_CONFIG.verticalRange);
     }
 
+    // Expand degenerate bounds (all requests at same position with 0 radius)
+    const boundsWidth = maxX - minX;
+    const boundsHeight = maxY - minY;
+    const minExpand = 1;
+    if (boundsWidth < minExpand) {
+      const center = (minX + maxX) / 2;
+      minX = center - minExpand / 2;
+      maxX = center + minExpand / 2;
+    }
+    if (boundsHeight < minExpand) {
+      const center = (minY + maxY) / 2;
+      minY = center - minExpand / 2;
+      maxY = center + minExpand / 2;
+    }
+
     const bounds = {
       min: { x: minX, y: minY },
       max: { x: maxX, y: maxY },
@@ -181,12 +191,15 @@ export class WakeCascadeManager implements IWakeCascadeManager {
 
       let shouldWake = false;
 
-      for (const req of wakeRequestsWithSquared) {
+      // Check against wake requests - compute radiusSquared inline instead of pre-allocating map
+      for (let i = 0; i < wakeRequests.length; i++) {
+        const req = wakeRequests[i];
         const dx = bodyX - req.x;
         const dy = bodyY - req.y;
         const distSquared = dx * dx + dy * dy;
+        const radiusSquared = req.radius * req.radius;
 
-        if (distSquared < req.radiusSquared) {
+        if (distSquared < radiusSquared) {
           shouldWake = true;
           break;
         }
@@ -211,19 +224,65 @@ export class WakeCascadeManager implements IWakeCascadeManager {
   }
 
   private processWakeRequestsOnly(): void {
-    const wakeRequests = [...this.pendingWakeRequests];
+    // Reference swap instead of spread copy
+    const wakeRequests = this.pendingWakeRequests;
     this.pendingWakeRequests = [];
 
-    for (const req of wakeRequests) {
+    if (wakeRequests.length === 0 || !this.engine) return;
+
+    if (wakeRequests.length === 1) {
+      // Single request - direct call is cheaper than spatial query setup
+      const req = wakeRequests[0];
       this.wakeInRadiusImmediate(req.x, req.y, req.radius);
+      return;
+    }
+
+    // Multiple requests - compute merged bounds for a single spatial query
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
+
+    for (const req of wakeRequests) {
+      minX = Math.min(minX, req.x - req.radius);
+      minY = Math.min(minY, req.y - req.radius);
+      maxX = Math.max(maxX, req.x + req.radius);
+      maxY = Math.max(maxY, req.y + req.radius);
+    }
+
+    const bounds = {
+      min: { x: minX, y: minY },
+      max: { x: maxX, y: maxY },
+    };
+
+    const bodiesInRegion = BodyCache.getInstance().getBodiesInRegion(this.engine, bounds);
+
+    for (const body of bodiesInRegion) {
+      if (body.isStatic || !body.isSleeping) continue;
+
+      const bodyX = body.position.x;
+      const bodyY = body.position.y;
+
+      for (const req of wakeRequests) {
+        const dx = bodyX - req.x;
+        const dy = bodyY - req.y;
+        const distSquared = dx * dx + dy * dy;
+        const radiusSquared = req.radius * req.radius;
+
+        if (distSquared < radiusSquared) {
+          Matter.Sleeping.set(body, false);
+          break;
+        }
+      }
     }
   }
 
   private processCascadeRequestsOnly(): void {
-    const cascadeRequests = [...this.pendingCascadeRequests];
+    // Reference swap instead of spread copy
+    const cascadeRequests = this.pendingCascadeRequests;
     this.pendingCascadeRequests = [];
 
-    if (cascadeRequests.length === 0) return;
+    if (cascadeRequests.length === 0 || !this.engine) return;
 
     let minX = Infinity,
       minY = Infinity,

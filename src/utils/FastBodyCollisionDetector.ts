@@ -1,6 +1,7 @@
 import Matter from "matter-js";
 import Phaser from "phaser";
 import { TUNNELING_PREVENTION_CONFIG } from "../config/PhysicsConfig";
+import { BodyCache } from "./BodyCache";
 
 export interface TunnelingCollisionResult {
   body: Matter.Body;
@@ -90,20 +91,24 @@ class FastBodyCollisionDetector {
     const endX = startX + normalizedVelX * rayLength;
     const endY = startY + normalizedVelY * rayLength;
 
-    const bodies = Matter.Composite.allBodies(this.engine.world);
-    const collidableBodies = bodies.filter((b) => {
-      if (b === body) return false;
-      if (b.isStatic === false && b.mass === 0) return false;
-      if (!b.collisionFilter?.mask) return false;
-      if (!b.collisionFilter?.category) return false;
+    const margin = Math.max(rayLength, 50);
+    const bounds = {
+      min: { x: Math.min(startX, endX) - margin, y: Math.min(startY, endY) - margin },
+      max: { x: Math.max(startX, endX) + margin, y: Math.max(startY, endY) + margin },
+    };
 
+    const bodiesInRegion = BodyCache.getInstance().getBodiesInRegion(this.engine, bounds);
+    const collidableBodies: Matter.Body[] = [];
+    for (let i = 0; i < bodiesInRegion.length; i++) {
+      const b = bodiesInRegion[i];
+      if (b === body) continue;
+      if (b.isStatic === false && b.mass === 0) continue;
+      if (!b.collisionFilter?.mask) continue;
+      if (!b.collisionFilter?.category) continue;
       const bodyMask = body.collisionFilter?.mask ?? 0;
-      const bCategory = b.collisionFilter.category;
-
-      if ((bCategory & bodyMask) === 0) return false;
-
-      return true;
-    });
+      if ((b.collisionFilter.category & bodyMask) === 0) continue;
+      collidableBodies.push(b);
+    }
 
     const raycastResult = Matter.Query.ray(
       collidableBodies,

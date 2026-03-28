@@ -4,7 +4,7 @@ import type { IExplosionShaderManager } from "../interfaces/IExplosionShaderMana
 import { materialRegistry } from "../config/registries/MaterialConfigRegistry";
 import { DesignTokens } from "../config/DesignTokens";
 import { EXPLOSION_SHADER_VFX_CONFIG } from "../config/VFXConfig";
-import { PerformanceManager } from "./PerformanceManager";
+import { MobileManager } from "./mobile/MobileManager";
 
 export class ExplosionShaderManager implements IExplosionShaderManager {
   private scene: Phaser.Scene;
@@ -20,7 +20,7 @@ export class ExplosionShaderManager implements IExplosionShaderManager {
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
-    this.isLowEndDevice = PerformanceManager.isLowEndGPUForExplosionShader(scene);
+    this.isLowEndDevice = MobileManager.getInstance().isMobile();
     this.baseQuadSize = this.isLowEndDevice
       ? EXPLOSION_SHADER_VFX_CONFIG.lowEndQuadSize
       : EXPLOSION_SHADER_VFX_CONFIG.normalQuadSize;

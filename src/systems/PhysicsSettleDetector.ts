@@ -233,10 +233,13 @@ export class PhysicsSettleDetector implements IPhysicsSettleDetector {
   }
 
   private onSettled(): void {
-    if (this.callbacks?.onSettled) {
-      this.callbacks.onSettled();
-    }
+    if (!this.isMonitoring) return;
+
+    // Stop monitoring FIRST to prevent re-entry from callback
+    const callbacks = this.callbacks;
     this.stopMonitoring();
+
+    callbacks?.onSettled();
   }
 
   isActive(): boolean {

@@ -56,7 +56,13 @@ export class PerformanceManager {
     return PERFORMANCE_MODES[previousIndex];
   }
 
+  private static cachedMode: PerformanceMode | null = null;
+
   public static getPerformanceMode(): PerformanceMode {
+    if (PerformanceManager.cachedMode !== null) {
+      return PerformanceManager.cachedMode;
+    }
+
     if (typeof window === "undefined") {
       return "auto";
     }
@@ -68,13 +74,16 @@ export class PerformanceManager {
       storedMode === "medium" ||
       storedMode === "low"
     ) {
+      PerformanceManager.cachedMode = storedMode;
       return storedMode;
     }
 
+    PerformanceManager.cachedMode = "auto";
     return "auto";
   }
 
   public static setPerformanceMode(mode: PerformanceMode): void {
+    PerformanceManager.cachedMode = mode;
     if (typeof window === "undefined") {
       return;
     }
@@ -185,6 +194,10 @@ export class PerformanceManager {
       minScreenDimension <= DEVICE_DETECTION_CONFIG.smallScreenDimension ||
       hardwareConcurrency <= 4
     ) {
+      return DEVICE_DETECTION_CONFIG.smallScreenMultiplier;
+    }
+
+    if (window.devicePixelRatio > 3) {
       return DEVICE_DETECTION_CONFIG.smallScreenMultiplier;
     }
 

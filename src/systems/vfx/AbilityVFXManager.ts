@@ -9,6 +9,9 @@ import {
   EXPLOSION_ACTIVATION_EFFECT_CONFIG,
 } from "../../config/VFXConfig";
 import { ImagePool, CirclePool } from "../../utils/ObjectPool";
+import { getMobileSafeBlendMode } from "../../utils/MobileBlendMode";
+import { PerformanceManager } from "../PerformanceManager";
+import { MobileManager } from "../mobile/MobileManager";
 
 export interface RadialBurstConfig {
   x: number;
@@ -98,10 +101,13 @@ export class AbilityVFXManager {
       duration,
       startScale,
       endScale,
-      blendMode,
       depth,
       tint,
     } = fullConfig;
+    const _blend = getMobileSafeBlendMode(
+      PerformanceManager.getQualityMultiplier(this.scene),
+      MobileManager.getInstance().isMobile()
+    );
 
     for (let i = 0; i < particleCount; i++) {
       const angle = (Math.PI * 2 * i) / particleCount;
@@ -119,7 +125,7 @@ export class AbilityVFXManager {
         particle = this.scene.add.image(x, y, "vfx", texture);
       }
 
-      particle.setBlendMode(blendMode as Phaser.BlendModes);
+      particle.setBlendMode(_blend);
       particle.setDepth(depth);
       particle.setScale(startScale);
       particle.setAlpha(1);
@@ -154,6 +160,10 @@ export class AbilityVFXManager {
     particleCount: number = 12
   ): void {
     const direction = Math.atan2(velocity.y, velocity.x);
+    const _blend = getMobileSafeBlendMode(
+      PerformanceManager.getQualityMultiplier(this.scene),
+      MobileManager.getInstance().isMobile()
+    );
 
     for (let i = 0; i < particleCount; i++) {
       const offset = (i / particleCount) * ABILITY_VFX_CONFIG.boostTrailOffsetDistance;
@@ -164,7 +174,7 @@ export class AbilityVFXManager {
         ABILITY_VFX_CONFIG.ringRadiusMax
       );
       const particle = this.ringPool.acquire(particleX, particleY, radius, 0xffff00, 0.8);
-      particle.setBlendMode("ADD");
+      particle.setBlendMode(_blend);
       particle.setDepth(T.depth.hudElements);
       this.scene.tweens.add({
         targets: particle,
@@ -180,6 +190,10 @@ export class AbilityVFXManager {
 
   public createSplitEffect(x: number, y: number): void {
     const config = SPLIT_EFFECT_CONFIG;
+    const _blend = getMobileSafeBlendMode(
+      PerformanceManager.getQualityMultiplier(this.scene),
+      MobileManager.getInstance().isMobile()
+    );
     this.createRadialBurst({
       x,
       y,
@@ -199,7 +213,7 @@ export class AbilityVFXManager {
       const light = this.lightPool.acquire();
       light.setPosition(x + offsetX, y + offsetY);
       light.setScale(config.lightInitialScale);
-      light.setBlendMode("ADD");
+      light.setBlendMode(_blend);
       light.setTint(0xffffff);
       light.setAlpha(1);
       light.setDepth(ABILITY_VFX_DEPTHS.light);
@@ -217,6 +231,10 @@ export class AbilityVFXManager {
 
   public createEggDropEffect(x: number, y: number): void {
     const config = EGG_DROP_EFFECT_CONFIG;
+    const _blend = getMobileSafeBlendMode(
+      PerformanceManager.getQualityMultiplier(this.scene),
+      MobileManager.getInstance().isMobile()
+    );
     this.createRadialBurst({
       x,
       y,
@@ -233,7 +251,7 @@ export class AbilityVFXManager {
     const glow = this.lightPool.acquire();
     glow.setPosition(x, y);
     glow.setScale(config.glowInitialScale);
-    glow.setBlendMode("ADD");
+    glow.setBlendMode(_blend);
     glow.setTint(0xffffff);
     glow.setAlpha(config.glowInitialAlpha);
     glow.setDepth(ABILITY_VFX_DEPTHS.glow);
@@ -250,6 +268,10 @@ export class AbilityVFXManager {
 
   public createExplosionActivationEffect(x: number, y: number): void {
     const config = EXPLOSION_ACTIVATION_EFFECT_CONFIG;
+    const _blend = getMobileSafeBlendMode(
+      PerformanceManager.getQualityMultiplier(this.scene),
+      MobileManager.getInstance().isMobile()
+    );
     const ring = this.ringPool.acquire(
       x,
       y,
@@ -257,7 +279,7 @@ export class AbilityVFXManager {
       config.ringColor,
       config.ringInitialAlpha
     );
-    ring.setBlendMode("ADD");
+    ring.setBlendMode(_blend);
     ring.setDepth(ABILITY_VFX_DEPTHS.ring);
     this.scene.tweens.add({
       targets: ring,

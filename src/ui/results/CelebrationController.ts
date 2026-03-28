@@ -3,6 +3,9 @@ import { DesignTokens as T } from "../../config/DesignTokens";
 import { LayoutManager } from "../LayoutManager";
 import { gameEvents } from "../../events/EventBus";
 import type { Position } from "../../types/Vector2";
+import { getMobileSafeBlendMode } from "../../utils/MobileBlendMode";
+import { PerformanceManager } from "../../systems/PerformanceManager";
+import { MobileManager } from "../../systems/mobile/MobileManager";
 
 export interface CelebrationConfig {
   scene: Phaser.Scene;
@@ -49,7 +52,10 @@ export class CelebrationController {
           angle: { min: 0, max: 360 },
           scale: { start: 0.2, end: 0 },
           lifespan: 3000,
-          blendMode: "ADD",
+          blendMode: getMobileSafeBlendMode(
+            PerformanceManager.getQualityMultiplier(this.scene),
+            MobileManager.getInstance().isMobile()
+          ),
           quantity: 8,
           frequency: 150,
           tint: [0xffd700, 0xff6b6b, 0x4ecdc4],

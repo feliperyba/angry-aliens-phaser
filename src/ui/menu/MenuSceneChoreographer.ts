@@ -8,6 +8,9 @@ import {
   MenuTimingConfig,
   MenuButtonsConfig,
 } from "../../config/MenuConfig";
+import { getMobileSafeBlendMode } from "../../utils/MobileBlendMode";
+import { PerformanceManager } from "../../systems/PerformanceManager";
+import { MobileManager } from "../../systems/mobile/MobileManager";
 
 export interface ChoreographerConfig {
   scene: Phaser.Scene;
@@ -71,6 +74,10 @@ export class MenuSceneChoreographer {
   private showTitle(): void {
     const titleY = this.viewportHeight * MenuTitleConfig.titleYPercent;
     const startY = MenuTitleConfig.startY;
+    const _blend = getMobileSafeBlendMode(
+      PerformanceManager.getQualityMultiplier(this.scene),
+      MobileManager.getInstance().isMobile()
+    );
 
     const container = this.scene.add.container(this.centerX, startY);
     container.setDepth(MenuTitleConfig.depth);
@@ -82,7 +89,7 @@ export class MenuSceneChoreographer {
     });
     outerGlow.setOrigin(0.5);
     outerGlow.setAlpha(0);
-    outerGlow.setBlendMode(Phaser.BlendModes.ADD);
+    outerGlow.setBlendMode(_blend);
 
     const innerGlow = this.scene.add.text(0, 0, MenuTitleConfig.text, {
       fontFamily: MenuTitleConfig.fontFamily,
@@ -91,7 +98,7 @@ export class MenuSceneChoreographer {
     });
     innerGlow.setOrigin(0.5);
     innerGlow.setAlpha(0);
-    innerGlow.setBlendMode(Phaser.BlendModes.ADD);
+    innerGlow.setBlendMode(_blend);
 
     const shadow = this.scene.add.text(
       MenuTitleConfig.shadow.offsetX,
@@ -264,6 +271,10 @@ export class MenuSceneChoreographer {
   }
 
   private spawnTitleStars(titleY: number): void {
+    const _blend = getMobileSafeBlendMode(
+      PerformanceManager.getQualityMultiplier(this.scene),
+      MobileManager.getInstance().isMobile()
+    );
     if (!this.scene.textures.exists("star_particle")) {
       const graphics = this.scene.add.graphics();
       graphics.fillStyle(0xffffff);
@@ -328,7 +339,7 @@ export class MenuSceneChoreographer {
       particle.setTint(MenuStarsConfig.colors[i % MenuStarsConfig.colors.length]);
       particle.setScale(0);
       particle.setAlpha(1);
-      particle.setBlendMode(Phaser.BlendModes.ADD);
+      particle.setBlendMode(_blend);
 
       const spreadAngle = Math.random() * Math.PI - Math.PI / 2;
       const targetX = startX + Math.cos(spreadAngle) * distance;
@@ -361,7 +372,7 @@ export class MenuSceneChoreographer {
       sparkle.setTint(0xffffff);
       sparkle.setScale(0);
       sparkle.setAlpha(0);
-      sparkle.setBlendMode(Phaser.BlendModes.ADD);
+      sparkle.setBlendMode(_blend);
 
       const spreadAngle = Math.random() * Math.PI - Math.PI / 2;
       const targetX = startX + Math.cos(spreadAngle) * distance;

@@ -26,11 +26,10 @@ interface PendingAtlasRequest {
 }
 
 const ID_DELIMITER = "::";
+const MAX_CACHE_SIZE = 300;
 
 export class FragmentWorkerClient {
   private static instance: FragmentWorkerClient | null = null;
-  private static readonly MAX_CACHE_SIZE = 300;
-
   private worker: Worker | null = null;
   private pendingRequests: Map<string, PendingRequest[]> = new Map();
   private pendingAtlasRequests: Map<string, PendingAtlasRequest> = new Map();
@@ -139,22 +138,6 @@ export class FragmentWorkerClient {
     }));
   }
 
-  private convertToSerialized(fragments: FragmentShape[]): SerializedFragmentShape[] {
-    return fragments.map((f) => ({
-      vertices: f.vertices,
-      centerX: f.centerX,
-      centerY: f.centerY,
-      bounds: f.bounds,
-      area: f.area,
-      originX: f.originX,
-      originY: f.originY,
-      simplifiedVerticesHigh: f.simplifiedVerticesHigh,
-      simplifiedVerticesLow: f.simplifiedVerticesLow,
-      vertexStringHigh: f.vertexStringHigh,
-      vertexStringLow: f.vertexStringLow,
-    }));
-  }
-
   private generateCacheKey(
     width: number,
     height: number,
@@ -202,13 +185,24 @@ export class FragmentWorkerClient {
         relaxationIterations
       );
     } else {
-      fragments = this.generateOnMainThread(width, height, fragmentCount, relaxationIterations);
+      fragments = await new Promise<FragmentShape[]>((resolve) => {
+        const run = () => {
+          resolve(
+            VoronoiGenerator.generateFragments(width, height, fragmentCount, relaxationIterations)
+          );
+        };
+        if (typeof requestIdleCallback !== "undefined") {
+          requestIdleCallback(run, { timeout: 16 });
+        } else {
+          setTimeout(run, 0);
+        }
+      });
     }
 
-    if (this.templateCache.size >= FragmentWorkerClient.MAX_CACHE_SIZE) {
+    if (this.templateCache.size >= MAX_CACHE_SIZE) {
       const keysToDelete = Array.from(this.templateCache.keys()).slice(
         0,
-        Math.floor(FragmentWorkerClient.MAX_CACHE_SIZE / 2)
+        Math.floor(MAX_CACHE_SIZE / 2)
       );
       for (const key of keysToDelete) {
         this.templateCache.delete(key);
@@ -252,7 +246,7 @@ export class FragmentWorkerClient {
         type: "generateAtlas" as const,
         id,
         textureBitmap,
-        fragments: this.convertToSerialized(fragments),
+        fragments: fragments.map((f) => ({ bounds: f.bounds, vertices: f.vertices })),
         width,
         height,
         material,
@@ -286,15 +280,6 @@ export class FragmentWorkerClient {
     });
   }
 
-  private generateOnMainThread(
-    width: number,
-    height: number,
-    fragmentCount: number,
-    relaxationIterations: number
-  ): FragmentShape[] {
-    return VoronoiGenerator.generateFragments(width, height, fragmentCount, relaxationIterations);
-  }
-
   getCacheSize(): number {
     return this.templateCache.size;
   }
@@ -313,6 +298,7 @@ export class FragmentWorkerClient {
 
   clearCache(): void {
     this.templateCache.clear();
+    VoronoiGenerator.clearCache();
   }
 
   destroy(): void {
@@ -323,6 +309,7 @@ export class FragmentWorkerClient {
     this.pendingRequests.clear();
     this.pendingAtlasRequests.clear();
     this.templateCache.clear();
+    VoronoiGenerator.clearCache();
     FragmentWorkerClient.instance = null;
   }
 }

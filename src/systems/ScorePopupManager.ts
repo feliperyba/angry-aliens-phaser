@@ -15,6 +15,9 @@ import {
   SCORE_POPUP_CATEGORY_CONFIGS,
 } from "../config/VFXConfig";
 import { TextPool, ImagePool, RectanglePool } from "../utils/ObjectPool";
+import { getMobileSafeBlendMode } from "../utils/MobileBlendMode";
+import { PerformanceManager } from "./PerformanceManager";
+import { MobileManager } from "./mobile/MobileManager";
 
 type ScorePopupConfigInternal = ScorePopupConfig;
 
@@ -301,6 +304,10 @@ export class ScorePopupManager implements IScorePopupManager {
 
   private spawnComboStars(x: number, y: number, config: ComboIndicatorConfig): void {
     const starConfig = config.stars;
+    const _blend = getMobileSafeBlendMode(
+      PerformanceManager.getQualityMultiplier(this.scene),
+      MobileManager.getInstance().isMobile()
+    );
 
     for (let i = 0; i < starConfig.count; i++) {
       const texture = Phaser.Utils.Array.GetRandom(starConfig.textures);
@@ -314,7 +321,7 @@ export class ScorePopupManager implements IScorePopupManager {
       star.setPosition(x, y);
       star.setScale(0);
       star.setTint(color);
-      star.setBlendMode(Phaser.BlendModes.ADD);
+      star.setBlendMode(_blend);
       star.setDepth(SCORE_POPUP_DEPTHS.stars);
       star.setAlpha(1);
 

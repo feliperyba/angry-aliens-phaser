@@ -185,10 +185,14 @@ export class Bird implements IBird {
 
       this.penetrationCount++;
 
-      this.scene.time.delayedCall(0, () => {
-        if (!this.matterImage?.body) return;
-        this.matterImage.setVelocity(preVelX * decayFactor, preVelY * decayFactor);
-      });
+      if (this.matterImage?.body) {
+        const img = this.matterImage;
+        const vx = preVelX * decayFactor;
+        const vy = preVelY * decayFactor;
+        this.scene.time.delayedCall(0, () => {
+          img.setVelocity(vx, vy);
+        });
+      }
     } else {
       const shouldPreserveMomentum =
         collidedBlockMaterial !== null &&
@@ -199,13 +203,20 @@ export class Bird implements IBird {
       }
     }
 
-    this.emitCollisionEvent(event);
+    this.emitCollisionEvent(event, {
+      impactSpeed,
+      target: otherBody.label,
+      x: birdBody.position.x,
+      y: birdBody.position.y,
+    });
 
     const config = BIRD_PHYSICS[this.type];
     if (config.activateOnCollision && !this.abilityActivated) {
       this.activateAbility();
     }
   }
+
+  private static readonly BLOCK_MATERIALS = new Set<string>(Object.values(BlockMaterial));
 
   private getCollidedBlockMaterial(labelA: string, labelB: string): BlockMaterial | null {
     const collidedLabel = BodyLabelHelpers.isBlock(labelA)
@@ -216,8 +227,8 @@ export class Bird implements IBird {
 
     if (!collidedLabel) return null;
 
-    const material = collidedLabel.replace("block-", "") as BlockMaterial;
-    return Object.values(BlockMaterial).includes(material) ? material : null;
+    const material = collidedLabel.slice(7);
+    return Bird.BLOCK_MATERIALS.has(material) ? (material as BlockMaterial) : null;
   }
 
   public launch(velocityX: number, velocityY: number): void {
@@ -278,33 +289,40 @@ export class Bird implements IBird {
 
     const multiplier = Math.pow(1 - BOUNCE_CONFIG.energyLossPerBounce, this.bounceCount);
 
-    this.scene.time.delayedCall(0, () => {
-      if (!this.matterImage?.body) return;
-      const currentVx = this.matterImage.body.velocity.x;
-      const currentVy = this.matterImage.body.velocity.y;
-      this.matterImage.setVelocity(currentVx * multiplier, currentVy * multiplier);
-    });
+    if (this.matterImage?.body) {
+      const img = this.matterImage;
+      const vx = this.matterImage.body.velocity.x * multiplier;
+      const vy = this.matterImage.body.velocity.y * multiplier;
+      this.scene.time.delayedCall(0, () => {
+        img.setVelocity(vx, vy);
+      });
+    }
   }
 
-  public emitCollisionEvent(event: Phaser.Types.Physics.Matter.MatterCollisionData): void {
+  public emitCollisionEvent(
+    event: Phaser.Types.Physics.Matter.MatterCollisionData,
+    precomputed?: { impactSpeed: number; target: string; x: number; y: number }
+  ): void {
+    if (precomputed) {
+      gameEvents.emit("birdCollision", {
+        bird: this,
+        impactSpeed: precomputed.impactSpeed,
+        target: precomputed.target,
+        x: precomputed.x,
+        y: precomputed.y,
+      });
+      return;
+    }
+
     const bodyA = event.bodyA;
     const bodyB = event.bodyB;
     const ownBody = this.matterImage?.body as Matter.Body | undefined;
     const birdBody = ownBody === bodyA ? bodyA : ownBody === bodyB ? bodyB : bodyA;
     const otherBody = birdBody === bodyA ? bodyB : bodyA;
 
-    const velocityA = birdBody.velocity;
-    const velocityB = otherBody.velocity;
-    const relativeVelocity = {
-      x: velocityA.x - velocityB.x,
-      y: velocityA.y - velocityB.y,
-    };
-    const rawImpactSpeed = Math.sqrt(relativeVelocity.x ** 2 + relativeVelocity.y ** 2);
-    const impactSpeed = TimeScaleCompensator.compensateImpactSpeed(rawImpactSpeed, this.scene);
-
     gameEvents.emit("birdCollision", {
       bird: this,
-      impactSpeed,
+      impactSpeed: 0,
       target: otherBody.label,
       x: birdBody.position.x,
       y: birdBody.position.y,
