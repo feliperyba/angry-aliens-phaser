@@ -75,20 +75,7 @@ Launch aliens from a slingshot to destroy structures and defeat the Greenelings.
 
 - Node.js 18+
 - npm or yarn
-
-### Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/angry-aliens.git
-
-# Navigate to project directory
-cd angry-aliens
-
-# Install dependencies
-npm install
-```
-
+- 
 ---
 
 ## Tech Stack
