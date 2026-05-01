@@ -17,7 +17,7 @@ Angry Aliens is an Angry Birds-style physics puzzle game built as a portfolio pr
 
 Launch aliens from a slingshot to destroy structures and defeat the Greenelings. Each alien type has unique abilities, and different materials respond realistically to impacts. The game features 30 levels across 6 thematic worlds, with a star-based scoring system that rewards precision and strategy, with several effects and programming techniques displayed.
 
-🎮 [Play here!](https://feliperyba.itch.io/angry-aliens)
+🎮 [Play here!](https://feliperyba.github.io/angry-aliens-phaser/)
 
 ### Why This Project?
 
